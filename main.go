@@ -2,12 +2,11 @@ package main
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
-
-	bolt "go.etcd.io/bbolt"
 )
 
 var (
@@ -23,18 +22,15 @@ var (
 func main() {
 
 	// Open database
-	db, err := bolt.Open(DBFile, 0600, nil)
+	db, err := sql.Open("sqlite3", "./foo.db")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	db.Update(func(tx *bolt.Tx) (err error) {
-		if _, err = tx.CreateBucketIfNotExists(Bucket); err != nil {
-			return fmt.Errorf("create bucket: %s", err)
-		}
-		return nil
-	})
+	if createTable(db) != nil {
+		log.Fatal(err)
+	}
 
 	// Read files
 	files, err := readDir(read_path)
@@ -47,13 +43,15 @@ func main() {
 		hash := getHashOfFileAsStream(file)
 		fmt.Println(file, hex.EncodeToString(hash))
 
-		db.Update(func(tx *bolt.Tx) error {
-			b := tx.Bucket(Bucket)
-			v := b.Get(hash)
-			fmt.Printf("The answer is: %s\n", v)
-			return nil
-		})
-		return
+		entry := FileEntry{
+			name: file,
+			size: 0, // FIXME:
+			hash: hex.EncodeToString(hash),
+		}
+
+		if insert(db, entry) != nil {
+			log.Fatal(err)
+		}
 	}
 	fmt.Printf("found %d files\n", len(files))
 
